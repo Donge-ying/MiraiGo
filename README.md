@@ -22,6 +22,7 @@ go get -u github.com/Mrs4s/MiraiGo
   <summary>已完成功能/开发计划列表</summary>
 
 **登录**
+- [x] 多个帐号登录
 - [x] 账号密码登录
 - [x] 二维码登录
 - [x] 验证码提交
