@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/textproto"
 	"net/url"
+	"regexp"
 	"strconv"
 
 	"github.com/pkg/errors"
@@ -59,15 +60,20 @@ const (
 	Emotion      HonorType = 6 // 快乐源泉
 )
 
+// 匹配 window.__INITIAL_STATE__ = 后的内容
+var honorRe = regexp.MustCompile(`window\.__INITIAL_STATE__\s*?=\s*?(\{.*\})`)
+
 func (c *QQClient) GetGroupHonorInfo(groupCode int64, honorType HonorType) (*GroupHonorInfo, error) {
 	b, err := utils.HttpGetBytes(fmt.Sprintf("https://qun.qq.com/interactive/honorlist?gc=%d&type=%d", groupCode, honorType), c.getCookiesWithDomain("qun.qq.com"))
 	if err != nil {
 		return nil, err
 	}
-	b = b[bytes.Index(b, []byte(`window.__INITIAL_STATE__=`))+25:]
-	b = b[:bytes.Index(b, []byte("</script>"))]
+	matched := honorRe.FindSubmatch(b)
+	if len(matched) == 0 {
+		return nil, errors.New("无匹配结果")
+	}
 	ret := GroupHonorInfo{}
-	err = json.Unmarshal(b, &ret)
+	err = json.NewDecoder(bytes.NewReader(matched[1])).Decode(&ret)
 	if err != nil {
 		return nil, err
 	}
@@ -161,6 +167,10 @@ type noticeImage struct {
 	ID     string `json:"id"`
 }
 
+type noticeSendResp struct {
+	NoticeId string `json:"new_fid"`
+}
+
 func (c *QQClient) GetGroupNotice(groupCode int64) (l []*GroupNoticeMessage, err error) {
 	v := url.Values{}
 	v.Set("bkn", strconv.Itoa(c.getCSRFToken()))
@@ -237,7 +247,7 @@ func (c *QQClient) uploadGroupNoticePic(img []byte) (*noticeImage, error) {
 	fw, _ := w.CreatePart(h)
 	_, _ = fw.Write(img)
 	_ = w.Close()
-	req, err := http.NewRequest("POST", "https://web.qun.qq.com/cgi-bin/announce/upload_img", buf)
+	req, err := http.NewRequest(http.MethodPost, "https://web.qun.qq.com/cgi-bin/announce/upload_img", buf)
 	if err != nil {
 		return nil, errors.Wrap(err, "new request error")
 	}
@@ -265,27 +275,37 @@ func (c *QQClient) uploadGroupNoticePic(img []byte) (*noticeImage, error) {
 }
 
 // AddGroupNoticeSimple 发群公告
-func (c *QQClient) AddGroupNoticeSimple(groupCode int64, text string) error {
+func (c *QQClient) AddGroupNoticeSimple(groupCode int64, text string) (noticeId string, err error) {
 	body := fmt.Sprintf(`qid=%v&bkn=%v&text=%v&pinned=0&type=1&settings={"is_show_edit_card":0,"tip_window_type":1,"confirm_required":1}`, groupCode, c.getCSRFToken(), url.QueryEscape(text))
-	_, err := utils.HttpPostBytesWithCookie("https://web.qun.qq.com/cgi-bin/announce/add_qun_notice?bkn="+fmt.Sprint(c.getCSRFToken()), []byte(body), c.getCookiesWithDomain("qun.qq.com"))
+	resp, err := utils.HttpPostBytesWithCookie("https://web.qun.qq.com/cgi-bin/announce/add_qun_notice?bkn="+fmt.Sprint(c.getCSRFToken()), []byte(body), c.getCookiesWithDomain("qun.qq.com"))
 	if err != nil {
-		return errors.Wrap(err, "request error")
+		return "", errors.Wrap(err, "request error")
 	}
-	return nil
+	var res noticeSendResp
+	err = json.Unmarshal(resp, &res)
+	if err != nil {
+		return "", errors.Wrap(err, "json unmarshal error")
+	}
+	return res.NoticeId, nil
 }
 
 // AddGroupNoticeWithPic 发群公告带图片
-func (c *QQClient) AddGroupNoticeWithPic(groupCode int64, text string, pic []byte) error {
+func (c *QQClient) AddGroupNoticeWithPic(groupCode int64, text string, pic []byte) (noticeId string, err error) {
 	img, err := c.uploadGroupNoticePic(pic)
 	if err != nil {
-		return err
+		return "", err
 	}
 	body := fmt.Sprintf(`qid=%v&bkn=%v&text=%v&pinned=0&type=1&settings={"is_show_edit_card":0,"tip_window_type":1,"confirm_required":1}&pic=%v&imgWidth=%v&imgHeight=%v`, groupCode, c.getCSRFToken(), url.QueryEscape(text), img.ID, img.Width, img.Height)
-	_, err = utils.HttpPostBytesWithCookie("https://web.qun.qq.com/cgi-bin/announce/add_qun_notice?bkn="+fmt.Sprint(c.getCSRFToken()), []byte(body), c.getCookiesWithDomain("qun.qq.com"))
+	resp, err := utils.HttpPostBytesWithCookie("https://web.qun.qq.com/cgi-bin/announce/add_qun_notice?bkn="+fmt.Sprint(c.getCSRFToken()), []byte(body), c.getCookiesWithDomain("qun.qq.com"))
 	if err != nil {
-		return errors.Wrap(err, "request error")
+		return "", errors.Wrap(err, "request error")
 	}
-	return nil
+	var res noticeSendResp
+	err = json.Unmarshal(resp, &res)
+	if err != nil {
+		return "", errors.Wrap(err, "json unmarshal error")
+	}
+	return res.NoticeId, nil
 }
 
 func (c *QQClient) DelGroupNotice(groupCode int64, fid string) error {

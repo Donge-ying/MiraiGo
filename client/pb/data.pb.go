@@ -3,6 +3,25 @@
 
 package pb
 
+type SSOReserveField struct {
+	Flag        int32          `protobuf:"varint,9,opt"`
+	Qimei       string         `protobuf:"bytes,12,opt"`
+	NewconnFlag int32          `protobuf:"varint,14,opt"`
+	Uid         string         `protobuf:"bytes,16,opt"`
+	Imsi        int32          `protobuf:"varint,18,opt"`
+	NetworkType int32          `protobuf:"varint,19,opt"`
+	IpStackType int32          `protobuf:"varint,20,opt"`
+	MessageType int32          `protobuf:"varint,21,opt"`
+	SecInfo     *SsoSecureInfo `protobuf:"bytes,24,opt"`
+	SsoIpOrigin int32          `protobuf:"varint,28,opt"`
+}
+
+type SsoSecureInfo struct {
+	SecSig         []byte `protobuf:"bytes,1,opt"`
+	SecDeviceToken []byte `protobuf:"bytes,2,opt"`
+	SecExtra       []byte `protobuf:"bytes,3,opt"`
+}
+
 type DeviceInfo struct {
 	Bootloader   string `protobuf:"bytes,1,opt"`
 	ProcVersion  string `protobuf:"bytes,2,opt"`
@@ -213,8 +232,8 @@ type GroupMemberInfo struct {
 	Lev         []byte `protobuf:"bytes,13,opt"`
 	Join        int64  `protobuf:"varint,14,opt"`
 	LastSpeak   int64  `protobuf:"varint,15,opt"`
-	//repeated CustomEntry customEnties = 16;
-	//repeated GBarInfo gbarConcerned = 17;
+	// repeated CustomEntry customEnties = 16;
+	// repeated GBarInfo gbarConcerned = 17;
 	GbarTitle              []byte `protobuf:"bytes,18,opt"`
 	GbarUrl                []byte `protobuf:"bytes,19,opt"`
 	GbarCnt                int32  `protobuf:"varint,20,opt"`
@@ -230,8 +249,8 @@ type GroupMemberInfo struct {
 	ConcernType            int32  `protobuf:"varint,30,opt"`
 	SpecialTitle           []byte `protobuf:"bytes,31,opt"`
 	SpecialTitleExpireTime int32  `protobuf:"varint,32,opt"`
-	//FlowersEntry flowerEntry = 33;
-	//TeamEntry teamEntry = 34;
+	// FlowersEntry flowerEntry = 33;
+	// TeamEntry teamEntry = 34;
 	PhoneNum []byte `protobuf:"bytes,35,opt"`
 	Job      []byte `protobuf:"bytes,36,opt"`
 	MedalId  int32  `protobuf:"varint,37,opt"`

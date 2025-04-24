@@ -2,6 +2,7 @@ package client
 
 import (
 	"crypto/md5"
+	crand "crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"math/rand"
@@ -30,99 +31,95 @@ type (
 	Version    = auth.OSVersion
 )
 
-var SystemDeviceInfo = &DeviceInfo{
-	Display:      []byte("MIRAI.123456.001"),
-	Product:      []byte("mirai"),
-	Device:       []byte("mirai"),
-	Board:        []byte("mirai"),
-	Brand:        []byte("mamoe"),
-	Model:        []byte("mirai"),
-	Bootloader:   []byte("unknown"),
-	FingerPrint:  []byte("mamoe/mirai/mirai:10/MIRAI.200122.001/1234567:user/release-keys"),
-	BootId:       []byte("cb886ae2-00b6-4d68-a230-787f111d12c7"),
-	ProcVersion:  []byte("Linux version 3.0.31-cb886ae2 (android-build@xxx.xxx.xxx.xxx.com)"),
-	BaseBand:     EmptyBytes,
-	SimInfo:      []byte("T-Mobile"),
-	OSType:       []byte("android"),
-	MacAddress:   []byte("00:50:56:C0:00:08"),
-	IpAddress:    []byte{10, 0, 1, 3}, // 10.0.1.3
-	WifiBSSID:    []byte("00:50:56:C0:00:08"),
-	WifiSSID:     []byte("<unknown ssid>"),
-	IMEI:         "468356291846738",
-	AndroidId:    []byte("MIRAI.123456.001"),
-	APN:          []byte("wifi"),
-	VendorName:   []byte("MIUI"),
-	VendorOSName: []byte("mirai"),
-	Protocol:     IPad,
-	Version: &Version{
-		Incremental: []byte("5891938"),
-		Release:     []byte("10"),
-		CodeName:    []byte("REL"),
-		SDK:         29,
-	},
-}
-
 var EmptyBytes = make([]byte, 0)
 
-func init() {
-	rand.Seed(time.Now().UnixNano())
+func GenRandomDevice() *DeviceInfo {
 	r := make([]byte, 16)
-	rand.Read(r)
-	t := md5.Sum(r)
-	SystemDeviceInfo.IMSIMd5 = t[:]
-	SystemDeviceInfo.GenNewGuid()
-	SystemDeviceInfo.GenNewTgtgtKey()
-}
-
-func GenRandomDevice() {
-	r := make([]byte, 16)
-	rand.Read(r)
+	crand.Read(r)
 	const numberRange = "0123456789"
-	SystemDeviceInfo.Display = []byte("MIRAI." + utils.RandomStringRange(6, numberRange) + ".001")
-	SystemDeviceInfo.FingerPrint = []byte("mamoe/mirai/mirai:10/MIRAI.200122.001/" + utils.RandomStringRange(7, numberRange) + ":user/release-keys")
-	SystemDeviceInfo.BootId = binary.GenUUID(r)
-	SystemDeviceInfo.ProcVersion = []byte("Linux version 3.0.31-" + utils.RandomString(8) + " (android-build@xxx.xxx.xxx.xxx.com)")
-	rand.Read(r)
+
+	var device = &DeviceInfo{
+		Product:      []byte("mirai"),
+		Device:       []byte("mirai"),
+		Board:        []byte("mirai"),
+		Brand:        []byte("mamoe"),
+		Model:        []byte("mirai"),
+		Bootloader:   []byte("unknown"),
+		BootId:       []byte("cb886ae2-00b6-4d68-a230-787f111d12c7"),
+		ProcVersion:  []byte("Linux version 3.0.31-cb886ae2 (android-build@xxx.xxx.xxx.xxx.com)"),
+		BaseBand:     EmptyBytes,
+		SimInfo:      []byte("T-Mobile"),
+		OSType:       []byte("android"),
+		MacAddress:   []byte("00:50:56:C0:00:08"),
+		IpAddress:    []byte{10, 0, 1, 3}, // 10.0.1.3
+		WifiBSSID:    []byte("00:50:56:C0:00:08"),
+		WifiSSID:     []byte("<unknown ssid>"),
+		IMEI:         "468356291846738",
+		AndroidId:    []byte("MIRAI.123456.001"),
+		APN:          []byte("wifi"),
+		VendorName:   []byte("MIUI"),
+		VendorOSName: []byte("mirai"),
+		Protocol:     AndroidPad,
+		Version: &Version{
+			Incremental: []byte("5891938"),
+			Release:     []byte("10"),
+			CodeName:    []byte("REL"),
+			SDK:         29,
+		},
+	}
+
+	device.Display = []byte("MIRAI." + utils.RandomStringRange(6, numberRange) + ".001")
+	device.FingerPrint = []byte("mamoe/mirai/mirai:10/MIRAI.200122.001/" + utils.RandomStringRange(7, numberRange) + ":user/release-keys")
+	device.BootId = binary.GenUUID(r)
+	device.ProcVersion = []byte("Linux version 3.0.31-" + utils.RandomString(8) + " (android-build@xxx.xxx.xxx.xxx.com)")
+	crand.Read(r)
 	t := md5.Sum(r)
-	SystemDeviceInfo.IMSIMd5 = t[:]
-	SystemDeviceInfo.IMEI = GenIMEI()
+	device.IMSIMd5 = t[:]
+	device.IMEI = GenIMEI()
 	r = make([]byte, 8)
-	rand.Read(r)
-	hex.Encode(SystemDeviceInfo.AndroidId, r)
-	SystemDeviceInfo.GenNewGuid()
-	SystemDeviceInfo.GenNewTgtgtKey()
+	crand.Read(r)
+	hex.Encode(device.AndroidId, r)
+	device.GenNewGuid()
+	device.GenNewTgtgtKey()
+	device.RequestQImei()
+	return device
 }
 
 func GenIMEI() string {
 	sum := 0 // the control sum of digits
 	var final strings.Builder
 
-	randSrc := rand.NewSource(time.Now().UnixNano())
-	randGen := rand.New(randSrc)
-
+	randGen := rand.New(rand.NewSource(time.Now().UnixNano()))
 	for i := 0; i < 14; i++ { // generating all the base digits
 		toAdd := randGen.Intn(10)
+		final.WriteString(strconv.Itoa(toAdd))
 		if (i+1)%2 == 0 { // special proc for every 2nd one
 			toAdd *= 2
 			if toAdd >= 10 {
 				toAdd = (toAdd % 10) + 1
 			}
 		}
-		sum += toAdd
-		final.WriteString(fmt.Sprintf("%d", toAdd)) // and even printing them here!
+		sum += toAdd // and even add them here!
 	}
 	ctrlDigit := (sum * 9) % 10 // calculating the control digit
-	final.WriteString(fmt.Sprintf("%d", ctrlDigit))
+	final.WriteString(strconv.Itoa(ctrlDigit))
 	return final.String()
 }
 
-func getSSOAddress() ([]netip.AddrPort, error) {
-	protocol := SystemDeviceInfo.Protocol.Version()
+func UpdateAppVersion(protocolType auth.ProtocolType, data []byte) error {
+	if _, ok := auth.AppVersions[protocolType]; !ok {
+		return errors.New("unknown protocol type: " + strconv.Itoa(int(protocolType)))
+	}
+	return auth.AppVersions[protocolType].UpdateFromJson(data)
+}
+
+func getSSOAddress(device *auth.Device) ([]netip.AddrPort, error) {
+	protocol := device.Protocol.Version()
 	key, _ := hex.DecodeString("F0441F5FF42DA58FDCF7949ABA62D411")
 	payload := jce.NewJceWriter(). // see ServerConfig.d
 					WriteInt64(0, 1).WriteInt64(0, 2).WriteByte(1, 3).
 					WriteString("00000", 4).WriteInt32(100, 5).
-					WriteInt32(int32(protocol.AppId), 6).WriteString(SystemDeviceInfo.IMEI, 7).
+					WriteInt32(int32(protocol.AppId), 6).WriteString(device.IMEI, 7).
 					WriteInt64(0, 8).WriteInt64(0, 9).WriteInt64(0, 10).
 					WriteInt64(0, 11).WriteByte(0, 12).WriteInt64(0, 13).Bytes()
 	buf := &jce.RequestDataVersion3{
@@ -179,16 +176,16 @@ func qualityTest(addr string) (int64, error) {
 func (c *QQClient) parsePrivateMessage(msg *msg.Message) *message.PrivateMessage {
 	friend := c.FindFriend(msg.Head.FromUin.Unwrap())
 	var sender *message.Sender
-	if friend == nil {
-		sender = &message.Sender{
-			Uin:      msg.Head.FromUin.Unwrap(),
-			Nickname: msg.Head.FromNick.Unwrap(),
-		}
-	} else {
+	if friend != nil {
 		sender = &message.Sender{
 			Uin:      friend.Uin,
 			Nickname: friend.Nickname,
 			IsFriend: true,
+		}
+	} else {
+		sender = &message.Sender{
+			Uin:      msg.Head.FromUin.Unwrap(),
+			Nickname: msg.Head.FromNick.Unwrap(),
 		}
 	}
 	ret := &message.PrivateMessage{
@@ -306,29 +303,11 @@ func genForwardTemplate(resID, preview, summary string, ts int64, items []*msg.P
 	}
 }
 
-func genLongTemplate(resID, brief string, ts int64) *message.ServiceElement {
-	limited := func() string {
-		if ss := []rune(brief); len(ss) > 30 {
-			return string(ss[:30]) + "…"
-		}
-		return brief
-	}()
-	template := fmt.Sprintf(`<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><msg serviceID="35" templateID="1" action="viewMultiMsg" brief="%s" m_resid="%s" m_fileName="%d" sourceMsgId="0" url="" flag="3" adverSign="0" multiMsgFlag="1"> <item layout="1"> <title>%s</title> <hr hidden="false" style="0"/> <summary>点击查看完整消息</summary> </item> <source name="聊天记录" icon="" action="" appid="-1"/> </msg>`,
-		utils.XmlEscape(limited), resID, ts, utils.XmlEscape(limited),
-	)
-	return &message.ServiceElement{
-		Id:      35,
-		Content: template,
-		ResId:   resID,
-		SubType: "Long",
-	}
-}
-
 func (c *QQClient) getWebDeviceInfo() (i string) {
 	qimei := strings.ToLower(utils.RandomString(36))
-	i += fmt.Sprintf("i=%v&imsi=&mac=%v&m=%v&o=%v&", c.deviceInfo.IMEI, utils.B2S(c.deviceInfo.MacAddress), utils.B2S(c.deviceInfo.Device), utils.B2S(c.deviceInfo.Version.Release))
-	i += fmt.Sprintf("a=%v&sd=0&c64=0&sc=1&p=1080*2210&aid=%v&", c.deviceInfo.Version.SDK, c.deviceInfo.IMEI)
-	i += fmt.Sprintf("f=%v&mm=%v&cf=%v&cc=%v&", c.deviceInfo.Brand, 5629 /* Total Memory*/, 1725 /* CPU Frequency */, 8 /* CPU Core Count */)
+	i += fmt.Sprintf("i=%v&imsi=&mac=%v&m=%v&o=%v&", c.Device().IMEI, utils.B2S(c.Device().MacAddress), utils.B2S(c.Device().Device), utils.B2S(c.Device().Version.Release))
+	i += fmt.Sprintf("a=%v&sd=0&c64=0&sc=1&p=1080*2210&aid=%v&", c.Device().Version.SDK, c.Device().IMEI)
+	i += fmt.Sprintf("f=%v&mm=%v&cf=%v&cc=%v&", c.Device().Brand, 5629 /* Total Memory*/, 1725 /* CPU Frequency */, 8 /* CPU Core Count */)
 	i += fmt.Sprintf("qimei=%v&qimei36=%v&", qimei, qimei)
 	i += "sharpP=1&n=wifi&support_xsj_live=true&client_mod=default&timezone=Asia/Shanghai&material_sdk_version=2.9.0&vh265=null&refreshrate=60"
 	return
@@ -351,7 +330,7 @@ func (c *QQClient) packOIDBPackage(cmd, serviceType int32, body []byte) []byte {
 		Command:       cmd,
 		ServiceType:   serviceType,
 		Bodybuffer:    body,
-		ClientVersion: "Android " + c.version.SortVersionName,
+		ClientVersion: "Android " + c.version().SortVersionName,
 	}
 	r, _ := proto.Marshal(pkg)
 	return r

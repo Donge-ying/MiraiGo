@@ -1,97 +1,95 @@
 package auth
 
-//go:generate stringer -type=Protocol -linecomment
-type Protocol int
+import (
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
 
-const (
-	Unset        Protocol = iota
-	AndroidPhone          // Android Phone
-	AndroidWatch          // Android Watch
-	MacOS                 // MacOS
-	QiDian                // 企点
-	IPad                  // iPad
-	AndroidPad            // Android Pad
+	"github.com/pkg/errors"
 )
 
-type AppVersion struct {
-	ApkSign         []byte
-	ApkId           string
-	SortVersionName string
-	SdkVersion      string
-	AppId           uint32
-	SubAppId        uint32
-	BuildTime       uint32
-	SSOVersion      uint32
-	MiscBitmap      uint32
-	SubSigmap       uint32
-	MainSigMap      uint32
-	Protocol        Protocol
-}
+//go:generate stringer -type=ProtocolType -linecomment
+type ProtocolType int
 
-func (i Protocol) Version() *AppVersion {
-	switch i {
-	case AndroidPhone:
-		return &AppVersion{
+const (
+	Unset        ProtocolType = iota
+	AndroidPhone              // Android Phone
+	AndroidWatch              // Android Watch
+	MacOS                     // MacOS
+	QiDian                    // 企点
+	IPad                      // iPad
+	AndroidPad                // Android Pad
+)
+
+var (
+	AppVersions = map[ProtocolType]*AppVersion{
+		AndroidPhone: {
 			ApkId:           "com.tencent.mobileqq",
-			AppId:           537143097,
-			SubAppId:        537143097,
-			SortVersionName: "8.9.23.9425",
-			BuildTime:       1640921786,
+			AppId:           537164840,
+			SubAppId:        537164840,
+			AppKey:          "0S200MNJT807V3GE",
+			SortVersionName: "8.9.63.11390",
+			BuildTime:       1685069178,
 			ApkSign:         []byte{0xA6, 0xB7, 0x45, 0xBF, 0x24, 0xA2, 0xC2, 0x77, 0x52, 0x77, 0x16, 0xF6, 0xF3, 0x6E, 0xB6, 0x8D},
-			SdkVersion:      "6.0.0.2530",
-			SSOVersion:      19,
+			SdkVersion:      "6.0.0.2546",
+			SSOVersion:      20,
 			MiscBitmap:      150470524,
 			SubSigmap:       0x10400,
-			MainSigMap:      16724722,
-			Protocol:        i,
-		}
-	case AndroidPad:
-		return &AppVersion{
+			MainSigMap: WLOGIN_A5 | WLOGIN_RESERVED | WLOGIN_STWEB | WLOGIN_A2 | WLOGIN_ST |
+				WLOGIN_LSKEY | WLOGIN_SKEY | WLOGIN_SIG64 | 1<<16 | WLOGIN_VKEY | WLOGIN_D2 |
+				WLOGIN_SID | WLOGIN_PSKEY | WLOGIN_AQSIG | WLOGIN_LHSIG | WLOGIN_PAYTOKEN, // 16724722
+			QUA:      "V1_AND_SQ_8.9.63_4194_YYB_D",
+			Protocol: AndroidPhone,
+		},
+		AndroidPad: {
 			ApkId:           "com.tencent.mobileqq",
-			AppId:           537142586,
-			SubAppId:        537142586,
-			SortVersionName: "8.9.23.9425",
-			BuildTime:       1640921786,
+			AppId:           537164888,
+			SubAppId:        537164888,
+			AppKey:          "0S200MNJT807V3GE",
+			SortVersionName: "8.9.63.11390",
+			BuildTime:       1685069178,
 			ApkSign:         []byte{0xA6, 0xB7, 0x45, 0xBF, 0x24, 0xA2, 0xC2, 0x77, 0x52, 0x77, 0x16, 0xF6, 0xF3, 0x6E, 0xB6, 0x8D},
-			SdkVersion:      "6.0.0.2530",
-			SSOVersion:      19,
+			SdkVersion:      "6.0.0.2546",
+			SSOVersion:      20,
 			MiscBitmap:      150470524,
 			SubSigmap:       0x10400,
-			MainSigMap:      16724722,
-			Protocol:        i,
-		}
-	case AndroidWatch:
-		return &AppVersion{
+			MainSigMap: WLOGIN_A5 | WLOGIN_RESERVED | WLOGIN_STWEB | WLOGIN_A2 | WLOGIN_ST |
+				WLOGIN_LSKEY | WLOGIN_SKEY | WLOGIN_SIG64 | 1<<16 | WLOGIN_VKEY | WLOGIN_D2 |
+				WLOGIN_SID | WLOGIN_PSKEY | WLOGIN_AQSIG | WLOGIN_LHSIG | WLOGIN_PAYTOKEN, // 16724722
+			QUA:      "V1_AND_SQ_8.9.63_4194_YYB_D",
+			Protocol: AndroidPad,
+		},
+		AndroidWatch: {
 			ApkId:           "com.tencent.qqlite",
-			AppId:           537064446,
-			SubAppId:        537064446,
-			SortVersionName: "2.0.5",
+			AppId:           537065138,
+			SubAppId:        537065138,
+			SortVersionName: "2.0.8",
 			BuildTime:       1559564731,
 			ApkSign:         []byte{0xA6, 0xB7, 0x45, 0xBF, 0x24, 0xA2, 0xC2, 0x77, 0x52, 0x77, 0x16, 0xF6, 0xF3, 0x6E, 0xB6, 0x8D},
-			SdkVersion:      "6.0.0.236",
+			SdkVersion:      "6.0.0.2365",
 			SSOVersion:      5,
 			MiscBitmap:      16252796,
 			SubSigmap:       0x10400,
-			MainSigMap:      34869472,
-			Protocol:        i,
-		}
-	case IPad:
-		return &AppVersion{
+			MainSigMap: WLOGIN_A5 | WLOGIN_RESERVED | WLOGIN_STWEB | WLOGIN_A2 | WLOGIN_ST |
+				WLOGIN_LSKEY | WLOGIN_SKEY | WLOGIN_SIG64 | 1<<16 | WLOGIN_VKEY | WLOGIN_D2 |
+				WLOGIN_SID | WLOGIN_PSKEY | WLOGIN_AQSIG | WLOGIN_LHSIG | WLOGIN_PAYTOKEN, // 16724722
+			Protocol: AndroidWatch,
+		},
+		IPad: {
 			ApkId:           "com.tencent.minihd.qq",
-			AppId:           537118796,
-			SubAppId:        537118796,
-			SortVersionName: "5.9.3",
+			AppId:           537151363,
+			SubAppId:        537151363,
+			SortVersionName: "8.9.33.614",
 			BuildTime:       1595836208,
 			ApkSign:         []byte{170, 57, 120, 244, 31, 217, 111, 249, 145, 74, 102, 158, 24, 100, 116, 199},
 			SdkVersion:      "6.0.0.2433",
-			SSOVersion:      12,
+			SSOVersion:      19,
 			MiscBitmap:      150470524,
 			SubSigmap:       66560,
-			MainSigMap:      1970400,
-			Protocol:        i,
-		}
-	case MacOS:
-		return &AppVersion{
+			MainSigMap:      WLOGIN_STWEB | WLOGIN_A2 | WLOGIN_ST | WLOGIN_SKEY | WLOGIN_VKEY | WLOGIN_D2 | WLOGIN_SID | WLOGIN_PSKEY, // 1970400
+			Protocol:        IPad,
+		},
+		MacOS: {
 			ApkId:           "com.tencent.minihd.qq",
 			AppId:           537128930,
 			SubAppId:        537128930,
@@ -102,11 +100,10 @@ func (i Protocol) Version() *AppVersion {
 			SSOVersion:      12,
 			MiscBitmap:      150470524,
 			SubSigmap:       66560,
-			MainSigMap:      1970400,
-			Protocol:        i,
-		}
-	case QiDian:
-		return &AppVersion{
+			MainSigMap:      WLOGIN_STWEB | WLOGIN_A2 | WLOGIN_ST | WLOGIN_SKEY | WLOGIN_VKEY | WLOGIN_D2 | WLOGIN_SID | WLOGIN_PSKEY, // 1970400
+			Protocol:        MacOS,
+		},
+		QiDian: {
 			ApkId:           "com.tencent.qidian",
 			AppId:           537096038,
 			SubAppId:        537036590,
@@ -117,11 +114,90 @@ func (i Protocol) Version() *AppVersion {
 			SSOVersion:      18,
 			MiscBitmap:      184024956,
 			SubSigmap:       66560,
-			MainSigMap:      34869472,
-			Protocol:        i,
-		}
+			MainSigMap:      WLOGIN_STWEB | WLOGIN_A2 | WLOGIN_ST | WLOGIN_SKEY | WLOGIN_D2 | WLOGIN_PSKEY | WLOGIN_DA2, // 34869472
+			Protocol:        QiDian,
+		},
 	}
+)
+
+// see oicq/wlogin_sdk/request/WtloginHelper.java  class SigType
+const (
+	_ = 1 << iota
+	WLOGIN_A5
+	_
+	_
+	WLOGIN_RESERVED
+	WLOGIN_STWEB
+	WLOGIN_A2
+	WLOGIN_ST
+	_
+	WLOGIN_LSKEY
+	_
+	_
+	WLOGIN_SKEY
+	WLOGIN_SIG64
+	WLOGIN_OPENKEY
+	WLOGIN_TOKEN
+	_
+	WLOGIN_VKEY
+	WLOGIN_D2
+	WLOGIN_SID
+	WLOGIN_PSKEY
+	WLOGIN_AQSIG
+	WLOGIN_LHSIG
+	WLOGIN_PAYTOKEN
+	WLOGIN_PF
+	WLOGIN_DA2
+	WLOGIN_QRPUSH
+	WLOGIN_PT4Token
+)
+
+type AppVersion struct {
+	ApkSign         []byte
+	ApkId           string
+	SortVersionName string
+	SdkVersion      string
+	AppId           uint32
+	SubAppId        uint32
+	AppKey          string
+	BuildTime       uint32
+	SSOVersion      uint32
+	MiscBitmap      uint32
+	SubSigmap       uint32
+	MainSigMap      uint32
+	QUA             string
+	Protocol        ProtocolType
+}
+
+func (v *AppVersion) String() string {
+	return fmt.Sprintf("%s %s", v.Protocol.String(), v.SortVersionName)
+}
+
+func (v *AppVersion) UpdateFromJson(d []byte) error {
+	var f appVersionFile
+	if err := json.Unmarshal(d, &f); err != nil {
+		return errors.Wrap(err, "failed to unmarshal json message")
+	}
+	// 按 AppVersion 字段顺序赋值，以免遗漏
+	v.ApkSign, _ = hex.DecodeString(f.ApkSign)
+	v.ApkId = f.ApkId
+	v.SortVersionName = f.SortVersionName
+	v.SdkVersion = f.SdkVersion
+	v.AppId = f.AppId
+	v.SubAppId = f.SubAppId
+	v.AppKey = f.AppKey
+	v.BuildTime = f.BuildTime
+	v.SSOVersion = f.SSOVersion
+	v.MiscBitmap = f.MiscBitmap
+	v.SubSigmap = f.SubSigmap
+	v.MainSigMap = f.MainSigMap
+	v.QUA = f.QUA
+	v.Protocol = f.ProtocolType
 	return nil
+}
+
+func (i ProtocolType) Version() *AppVersion {
+	return AppVersions[i]
 }
 
 type SigInfo struct {
@@ -165,4 +241,21 @@ type SigInfo struct {
 	PubAccountCookie []byte
 	Ksid             []byte
 	// msgCtrlBuf       []byte
+}
+
+type appVersionFile struct {
+	ApkId           string       `json:"apk_id"`
+	AppId           uint32       `json:"app_id"`
+	SubAppId        uint32       `json:"sub_app_id"`
+	AppKey          string       `json:"app_key"`
+	SortVersionName string       `json:"sort_version_name"`
+	BuildTime       uint32       `json:"build_time"`
+	ApkSign         string       `json:"apk_sign"` // hex encoded
+	SdkVersion      string       `json:"sdk_version"`
+	SSOVersion      uint32       `json:"sso_version"`
+	MiscBitmap      uint32       `json:"misc_bitmap"`
+	MainSigMap      uint32       `json:"main_sig_map"`
+	SubSigmap       uint32       `json:"sub_sig_map"`
+	QUA             string       `json:"qua"`
+	ProtocolType    ProtocolType `json:"protocol_type"`
 }

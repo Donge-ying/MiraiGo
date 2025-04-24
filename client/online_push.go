@@ -23,15 +23,15 @@ var msg0x210Decoders = map[int64]func(*QQClient, []byte) error{
 }
 
 // OnlinePush.ReqPush
-func decodeOnlinePushReqPacket(c *QQClient, info *network.IncomingPacketInfo, payload []byte) (any, error) {
+func decodeOnlinePushReqPacket(c *QQClient, pkt *network.Packet) (any, error) {
 	request := &jce.RequestPacket{}
-	request.ReadFrom(jce.NewJceReader(payload))
+	request.ReadFrom(jce.NewJceReader(pkt.Payload))
 	data := &jce.RequestDataVersion2{}
 	data.ReadFrom(jce.NewJceReader(request.SBuffer))
 	jr := jce.NewJceReader(data.Map["req"]["OnlinePushPack.SvcReqPushMsg"][1:])
 	uin := jr.ReadInt64(0)
 	msgInfos := jr.ReadPushMessageInfos(2)
-	_ = c.sendPacket(c.buildDeleteOnlinePushPacket(uin, 0, nil, info.SequenceId, msgInfos))
+	_ = c.sendPacket(c.buildDeleteOnlinePushPacket(uin, 0, nil, pkt.SequenceId, msgInfos))
 	for _, m := range msgInfos {
 		k := fmt.Sprintf("%v%v%v", m.MsgSeq, m.MsgTime, m.MsgUid)
 		if _, ok := c.onlinePushCache.Get(k); ok {
@@ -208,6 +208,10 @@ func msgType0x210Sub27Decoder(c *QQClient, protobuf []byte) error {
 		if m.DelFriend != nil {
 			frdUin := m.DelFriend.Uins[0]
 			if frd := c.FindFriend(int64(frdUin)); frd != nil {
+				c.DeleteFriendEvent.dispatch(c, &DeleteFriendEvent{
+					Uin:      frd.Uin,
+					Nickname: frd.Nickname,
+				})
 				if err := c.ReloadFriendList(); err != nil {
 					return errors.Wrap(err, "failed to reload friend list")
 				}

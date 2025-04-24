@@ -13,6 +13,13 @@ import (
 	"github.com/Mrs4s/MiraiGo/utils"
 )
 
+type IMessage interface {
+	GetElements() []IMessageElement
+	Chat() int64
+	ToString() string
+	Texts() []string
+}
+
 type (
 	PrivateMessage struct {
 		Id         int32
@@ -107,7 +114,7 @@ func NewSendingMessage() *SendingMessage {
 }
 
 func (msg *PrivateMessage) ToString() (res string) {
-	for _, elem := range msg.Elements {
+	for _, elem := range msg.GetElements() {
 		switch e := elem.(type) {
 		case *TextElement:
 			res += e.Content
@@ -120,40 +127,102 @@ func (msg *PrivateMessage) ToString() (res string) {
 	return
 }
 
+func (msg *PrivateMessage) Chat() int64 {
+	return msg.Sender.Uin
+}
+
+func (msg *PrivateMessage) GetElements() []IMessageElement {
+	return msg.Elements
+}
+
+func (msg *PrivateMessage) Texts() []string {
+	return parseTexts(msg.GetElements())
+}
+
+func (msg *GroupMessage) Chat() int64 {
+	return msg.GroupCode
+}
+
+func (msg *GroupMessage) GetElements() []IMessageElement {
+	return msg.Elements
+}
+
+func (msg *TempMessage) Chat() int64 {
+	return msg.GroupCode
+}
+
+func (msg *TempMessage) GetElements() []IMessageElement {
+	return msg.Elements
+}
+
+func (msg *TempMessage) Texts() []string {
+	return parseTexts(msg.GetElements())
+}
+
 func (msg *TempMessage) ToString() (res string) {
+	var strBuilder strings.Builder
 	for _, elem := range msg.Elements {
 		switch e := elem.(type) {
 		case *TextElement:
-			res += e.Content
+			strBuilder.WriteString(e.Content)
 		case *FaceElement:
-			res += "[" + e.Name + "]"
+			strBuilder.WriteString("[")
+			strBuilder.WriteString(e.Name)
+			strBuilder.WriteString("]")
 		case *AtElement:
-			res += e.Display
+			strBuilder.WriteString(e.Display)
 		}
 	}
+	res = strBuilder.String()
 	return
 }
 
 func (msg *GroupMessage) ToString() (res string) {
-	for _, elem := range msg.Elements {
+	var strBuilder strings.Builder
+	for _, elem := range msg.GetElements() {
 		switch e := elem.(type) {
 		case *TextElement:
-			res += e.Content
+			strBuilder.WriteString(e.Content)
 		case *FaceElement:
-			res += "[" + e.Name + "]"
+			strBuilder.WriteString("[")
+			strBuilder.WriteString(e.Name)
+			strBuilder.WriteString("]")
 		case *MarketFaceElement:
-			res += "[" + e.Name + "]"
+			strBuilder.WriteString("[")
+			strBuilder.WriteString(e.Name)
+			strBuilder.WriteString("]")
 		case *GroupImageElement:
-			res += "[Image: " + e.ImageId + "]"
+			strBuilder.WriteString("Image: ")
+			strBuilder.WriteString(e.ImageId)
+			strBuilder.WriteString("]")
 		case *AtElement:
-			res += e.Display
+			strBuilder.WriteString(e.Display)
 		case *RedBagElement:
-			res += "[RedBag:" + e.Title + "]"
+			strBuilder.WriteString("[RedBag: ")
+			strBuilder.WriteString(e.Title)
+			strBuilder.WriteString("]")
 		case *ReplyElement:
-			res += "[Reply:" + strconv.FormatInt(int64(e.ReplySeq), 10) + "]"
+			strBuilder.WriteString("[Reply: ")
+			strBuilder.WriteString(strconv.FormatInt(int64(e.ReplySeq), 10))
+			strBuilder.WriteString("]")
 		}
 	}
+	res = strBuilder.String()
 	return
+}
+
+func (msg *GroupMessage) Texts() []string {
+	return parseTexts(msg.GetElements())
+}
+
+func parseTexts(elements []IMessageElement) []string {
+	texts := make([]string, 0, 4)
+	for _, elem := range elements {
+		if elem.Type() == Text {
+			texts = append(texts, elem.(*TextElement).Content)
+		}
+	}
+	return texts
 }
 
 func (msg *SendingMessage) Append(e IMessageElement) *SendingMessage {
@@ -318,6 +387,7 @@ func ToSrcProtoElems(elems []IMessageElement) []*msg.Elem {
 
 func ParseMessageElems(elems []*msg.Elem) []IMessageElement {
 	var res []IMessageElement
+	var newImg = false
 	for _, elem := range elems {
 		if elem.SrcMsg != nil && len(elem.SrcMsg.OrigSeqs) != 0 {
 			r := &ReplyElement{
@@ -468,16 +538,18 @@ func ParseMessageElems(elems []*msg.Elem) []IMessageElement {
 					bizType = ImageBizType(attr.ImageBizType.Unwrap())
 				}
 			}
-			res = append(res, &GroupImageElement{
-				FileId:       int64(elem.CustomFace.FileId.Unwrap()),
-				ImageId:      elem.CustomFace.FilePath.Unwrap(),
-				Size:         elem.CustomFace.Size.Unwrap(),
-				Width:        elem.CustomFace.Width.Unwrap(),
-				Height:       elem.CustomFace.Height.Unwrap(),
-				Url:          url,
-				ImageBizType: bizType,
-				Md5:          elem.CustomFace.Md5,
-			})
+			if !newImg {
+				res = append(res, &GroupImageElement{
+					FileId:       int64(elem.CustomFace.FileId.Unwrap()),
+					ImageId:      elem.CustomFace.FilePath.Unwrap(),
+					Size:         elem.CustomFace.Size.Unwrap(),
+					Width:        elem.CustomFace.Width.Unwrap(),
+					Height:       elem.CustomFace.Height.Unwrap(),
+					Url:          url,
+					ImageBizType: bizType,
+					Md5:          elem.CustomFace.Md5,
+				})
+			}
 		}
 		if elem.MarketFace != nil {
 			face := &MarketFaceElement{
@@ -513,28 +585,39 @@ func ParseMessageElems(elems []*msg.Elem) []IMessageElement {
 			}
 			return []IMessageElement{face}
 		}
+
 		if elem.NotOnlineImage != nil {
-			var img string
-			if elem.NotOnlineImage.OrigUrl.Unwrap() != "" {
-				img = "https://c2cpicdw.qpic.cn" + elem.NotOnlineImage.OrigUrl.Unwrap()
-			} else {
-				img = "https://c2cpicdw.qpic.cn/offpic_new/0"
-				downloadPath := elem.NotOnlineImage.ResId.Unwrap()
-				if elem.NotOnlineImage.DownloadPath.Unwrap() != "" {
-					downloadPath = elem.NotOnlineImage.DownloadPath.Unwrap()
+			img := elem.NotOnlineImage
+
+			var url string
+			switch {
+			case img.PbReserve != nil && img.PbReserve.Url.Unwrap() != "":
+				url = fmt.Sprintf("https://c2cpicdw.qpic.cn%s&spec=0&rf=naio", img.PbReserve.Url.Unwrap())
+			case img.OrigUrl.Unwrap() != "":
+				url = "https://c2cpicdw.qpic.cn" + img.OrigUrl.Unwrap()
+			default:
+				url = "https://c2cpicdw.qpic.cn/offpic_new/0"
+				downloadPath := img.ResId.Unwrap()
+				if img.DownloadPath.Unwrap() != "" {
+					downloadPath = img.DownloadPath.Unwrap()
 				}
 				if !strings.HasPrefix(downloadPath, "/") {
-					img += "/"
+					url += "/"
 				}
-				img += downloadPath + "/0?term=3"
+				url += downloadPath + "/0?term=3"
 			}
-			res = append(res, &FriendImageElement{
-				ImageId: elem.NotOnlineImage.FilePath.Unwrap(),
-				Size:    elem.NotOnlineImage.FileLen.Unwrap(),
-				Url:     img,
-				Md5:     elem.NotOnlineImage.PicMd5,
-			})
+
+			if !newImg {
+				res = append(res, &FriendImageElement{
+					ImageId: img.FilePath.Unwrap(),
+					Size:    img.FileLen.Unwrap(),
+					Url:     url,
+					Md5:     img.PicMd5,
+				})
+			}
+
 		}
+
 		if elem.QQWalletMsg != nil && elem.QQWalletMsg.AioBody != nil {
 			// /com/tencent/mobileqq/data/MessageForQQWalletMsg.java#L366
 			msgType := elem.QQWalletMsg.AioBody.MsgType.Unwrap()
@@ -588,7 +671,36 @@ func ParseMessageElems(elems []*msg.Elem) []IMessageElement {
 					Name: strings.TrimPrefix(string(animatedStickerMsg.Text), "/"),
 				}
 				return []IMessageElement{sticker} // sticker 永远为单独消息
+			case 48:
+				img := &msg.PbMultiMediaElement{}
+				_ = proto.Unmarshal(elem.CommonElem.PbElem, img)
+				domain := img.Elem1.Data.Domain.Unwrap()
+				imgURL := img.Elem1.Data.ImgURL.Unwrap()
+
+				if img.Elem2.Data.Friend != nil {
+					rKey := img.Elem2.Data.Friend.RKey.Unwrap()
+					url := fmt.Sprintf("https://%s%s%s&spec=0&rf=naio", domain, imgURL, rKey)
+					res = append(res, &FriendImageElement{
+						ImageId: img.Elem1.Meta.FilePath.Unwrap(),
+						Size:    img.Elem1.Meta.Data.FileLen.Unwrap(),
+						Url:     url,
+						Md5:     img.Elem1.Meta.Data.PicMd5,
+					})
+					newImg = true
+				}
+				if img.Elem2.Data.Group != nil {
+					rKey := img.Elem2.Data.Group.RKey.Unwrap()
+					url := fmt.Sprintf("https://%s%s%s&spec=0&rf=naio", domain, imgURL, rKey)
+					res = append(res, &GroupImageElement{
+						ImageId: img.Elem1.Meta.FilePath.Unwrap(),
+						Size:    img.Elem1.Meta.Data.FileLen.Unwrap(),
+						Url:     url,
+						Md5:     img.Elem1.Meta.Data.PicMd5,
+					})
+					newImg = true
+				}
 			}
+
 		}
 	}
 	return res

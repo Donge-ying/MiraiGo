@@ -29,6 +29,8 @@ type FriendImageElement struct {
 	ImageId string
 	Md5     []byte
 	Size    int32
+	Width   int32
+	Height  int32
 	Url     string
 
 	Flash bool
@@ -151,9 +153,10 @@ func (e *FriendImageElement) Pack() []*msg.Elem {
 		ResId:        proto.Some(e.ImageId),
 		OldPicMd5:    proto.Some(false),
 		PicMd5:       e.Md5,
+		PicHeight:    proto.Some(e.Height),
+		PicWidth:     proto.Some(e.Width),
 		DownloadPath: proto.Some(e.ImageId),
 		Original:     proto.Int32(1),
-		PbReserve:    []byte{0x78, 0x02},
 	}
 
 	if e.Flash {

@@ -27,9 +27,9 @@ type tipsPushInfo struct {
 	ChannelId uint64
 }
 
-func decodeGuildEventFlowPacket(c *QQClient, _ *network.IncomingPacketInfo, payload []byte) (any, error) {
+func decodeGuildEventFlowPacket(c *QQClient, pkt *network.Packet) (any, error) {
 	push := new(channel.MsgOnlinePush)
-	if err := proto.Unmarshal(payload, push); err != nil {
+	if err := proto.Unmarshal(pkt.Payload, push); err != nil {
 		return nil, errors.Wrap(err, "failed to unmarshal protobuf message")
 	}
 	if push.CompressFlag.Unwrap() == 1 && len(push.CompressMsg) > 0 {
@@ -64,8 +64,8 @@ func decodeGuildEventFlowPacket(c *QQClient, _ *network.IncomingPacketInfo, payl
 				}
 			}
 			if m.Head.ContentHead.SubType.Unwrap() == 2 { // todo: tips?
-				if common == nil { // empty tips
-				}
+				// if common == nil { // empty tips
+				// }
 				tipsInfo := &tipsPushInfo{
 					TinyId:    m.Head.RoutingHead.FromTinyid.Unwrap(),
 					GuildId:   m.Head.RoutingHead.GuildId.Unwrap(),
@@ -151,7 +151,7 @@ func (c *QQClient) processGuildEventBody(m *channel.ChannelMsgContent, eventBody
 		if oldInfo == nil {
 			info, err := c.GuildService.FetchChannelInfo(m.Head.RoutingHead.GuildId.Unwrap(), eventBody.ChangeChanInfo.ChanId.Unwrap())
 			if err != nil {
-				c.error("error to decode channel info updated event: fetch channel info failed: %v", err)
+				c.error("failed to decode channel info updated event: fetch channel info failed: %v", err)
 				return
 			}
 			guild.Channels = append(guild.Channels, info)
@@ -162,7 +162,7 @@ func (c *QQClient) processGuildEventBody(m *channel.ChannelMsgContent, eventBody
 		}
 		newInfo, err := c.GuildService.FetchChannelInfo(m.Head.RoutingHead.GuildId.Unwrap(), eventBody.ChangeChanInfo.ChanId.Unwrap())
 		if err != nil {
-			c.error("error to decode channel info updated event: fetch channel info failed: %v", err)
+			c.error("failed to decode channel info updated event: fetch channel info failed: %v", err)
 			return
 		}
 		for i := range guild.Channels {
@@ -187,7 +187,7 @@ func (c *QQClient) processGuildEventBody(m *channel.ChannelMsgContent, eventBody
 		*/
 		profile, err := c.GuildService.FetchGuildMemberProfileInfo(guild.GuildId, eventBody.JoinGuild.MemberTinyid.Unwrap())
 		if err != nil {
-			c.error("error to decode member join guild event: get member profile error: %v", err)
+			c.error("failed to decode member join guild event: get member profile error: %v", err)
 			return
 		}
 		info := &GuildMemberInfo{

@@ -2,7 +2,9 @@ package client
 
 import (
 	"net"
+	"net/netip"
 	"runtime/debug"
+	"sort"
 	"sync"
 	"time"
 
@@ -10,7 +12,6 @@ import (
 
 	"github.com/Mrs4s/MiraiGo/client/internal/network"
 	"github.com/Mrs4s/MiraiGo/client/internal/oicq"
-	"github.com/Mrs4s/MiraiGo/internal/packets"
 	"github.com/Mrs4s/MiraiGo/message"
 	"github.com/Mrs4s/MiraiGo/utils"
 )
@@ -87,8 +88,65 @@ func (c *QQClient) ConnectionQualityTest() *ConnectionQualityInfo {
 	return r
 }
 
+func (c *QQClient) initServers() {
+	if c.Device() == nil {
+		// must have device. Use c.UseDevice to set it!
+		panic("client device is nil")
+	}
+
+	sso, err := getSSOAddress(c.Device())
+	if err == nil && len(sso) > 0 {
+		c.servers = append(sso, c.servers...)
+	}
+	adds, err := net.LookupIP("msfwifi.3g.qq.com") // host servers
+	if err == nil && len(adds) > 0 {
+		var hostAddrs []netip.AddrPort
+		for _, addr := range adds {
+			ip, ok := netip.AddrFromSlice(addr.To4())
+			if ok {
+				hostAddrs = append(hostAddrs, netip.AddrPortFrom(ip, 8080))
+			}
+		}
+		c.servers = append(hostAddrs, c.servers...)
+	}
+	if len(c.servers) == 0 {
+		c.servers = []netip.AddrPort{ // default servers
+			netip.AddrPortFrom(netip.AddrFrom4([4]byte{42, 81, 172, 81}), 80),
+			netip.AddrPortFrom(netip.AddrFrom4([4]byte{114, 221, 148, 59}), 14000),
+			netip.AddrPortFrom(netip.AddrFrom4([4]byte{42, 81, 172, 147}), 443),
+			netip.AddrPortFrom(netip.AddrFrom4([4]byte{125, 94, 60, 146}), 80),
+			netip.AddrPortFrom(netip.AddrFrom4([4]byte{114, 221, 144, 215}), 80),
+			netip.AddrPortFrom(netip.AddrFrom4([4]byte{42, 81, 172, 22}), 80),
+		}
+	}
+	pings := make([]int64, len(c.servers))
+	wg := sync.WaitGroup{}
+	wg.Add(len(c.servers))
+	for i := range c.servers {
+		go func(index int) {
+			defer wg.Done()
+			p, err := qualityTest(c.servers[index].String())
+			if err != nil {
+				pings[index] = 9999
+				return
+			}
+			pings[index] = p
+		}(i)
+	}
+	wg.Wait()
+	sort.Slice(c.servers, func(i, j int) bool {
+		return pings[i] < pings[j]
+	})
+	if len(c.servers) > 3 {
+		c.servers = c.servers[0 : len(c.servers)/2] // 保留ping值中位数以上的server
+	}
+}
+
 // connect 连接到 QQClient.servers 中的服务器
 func (c *QQClient) connect() error {
+	// init qq servers
+	c.initServerOnce.Do(c.initServers)
+
 	addr := c.servers[c.currServerIndex].String()
 	c.info("connect to server: %v", addr)
 	err := c.TCP.Connect(addr)
@@ -252,6 +310,13 @@ func (c *QQClient) sendAndWaitDynamic(seq uint16, pkt []byte) ([]byte, error) {
 	}
 }
 
+// SendSsoPacket
+// 发送签名回调包给服务器并获取返回结果供提交
+func (c *QQClient) SendSsoPacket(cmd string, body []byte) ([]byte, error) {
+	seq, data := c.uniPacket(cmd, body)
+	return c.sendAndWaitDynamic(seq, data)
+}
+
 // plannedDisconnect 计划中断线事件
 func (c *QQClient) plannedDisconnect(_ *network.TCPClient) {
 	c.debug("planned disconnect.")
@@ -324,12 +389,12 @@ func (c *QQClient) netLoop() {
 		errCount = 0
 		c.debug("rev pkt: %v seq: %v", resp.CommandName, resp.SequenceID)
 		c.stat.PacketReceived.Add(1)
-		pkt := &packets.IncomingPacket{
+		pkt := &network.Packet{
 			SequenceId:  uint16(resp.SequenceID),
 			CommandName: resp.CommandName,
 			Payload:     resp.Body,
 		}
-		go func(pkt *packets.IncomingPacket) {
+		go func(pkt *network.Packet) {
 			defer func() {
 				if pan := recover(); pan != nil {
 					c.error("panic on decoder %v : %v\n%s", pkt.CommandName, pan, debug.Stack())
@@ -343,11 +408,8 @@ func (c *QQClient) netLoop() {
 				var decoded any
 				decoded = pkt.Payload
 				if info == nil || !info.dynamic {
-					decoded, err = decoder(c, &network.IncomingPacketInfo{
-						SequenceId:  pkt.SequenceId,
-						CommandName: pkt.CommandName,
-						Params:      info.getParams(),
-					}, pkt.Payload)
+					pkt.Params = info.getParams()
+					decoded, err = decoder(c, pkt)
 					if err != nil {
 						c.debug("decode pkt %v error: %+v", pkt.CommandName, err)
 					}

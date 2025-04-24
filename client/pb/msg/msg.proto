@@ -206,7 +206,7 @@ message Elem {
   optional MarketFace marketFace = 6;
   //ElemFlags elemFlags = 7;
   optional CustomFace customFace = 8;
-  optional ElemFlags2 elemFlags2 = 9;
+  //optional ElemFlags2 elemFlags2 = 9;
   //FunFace funFace = 10;
   //SecretFileMsg secretFile = 11;
   optional RichMsg richMsg = 12;
@@ -455,7 +455,12 @@ message NotOnlineImage {
   optional int32 fileId = 23;
   optional int32 showLen = 24;
   optional int32 downloadLen = 25;
-  optional bytes pbReserve = 29;
+
+  // TODO: find this message
+  message PbReserve {
+    optional string url = 30;
+  }
+  optional PbReserve pbReserve = 29;
 }
 
 message NotOnlineFile {
@@ -632,7 +637,7 @@ message MessageHead {
   optional int32 fromAppid = 10;
   optional int32 fromInstid = 11;
   optional int32 userActive = 12;
-  optional DiscussInfo discussInfo = 13;
+  // optional DiscussInfo discussInfo = 13;
   optional string fromNick = 14;
   optional int64 authUin = 15;
   optional string authNick = 16;
@@ -640,11 +645,11 @@ message MessageHead {
   optional string authRemark = 18;
   optional string groupName = 19;
   optional MutilTransHead mutiltransHead = 20;
-  optional InstCtrl msgInstCtrl = 21;
+  // optional InstCtrl msgInstCtrl = 21;
   optional int32 publicAccountGroupSendFlag = 22;
   optional int32 wseqInC2cMsghead = 23;
   optional int64 cpid = 24;
-  optional ExtGroupKeyInfo extGroupKeyInfo = 25;
+  // optional ExtGroupKeyInfo extGroupKeyInfo = 25;
   optional string multiCompatibleText = 26;
   optional int32 authSex = 27;
   optional bool isSrcMsg = 28;
@@ -872,3 +877,41 @@ message MsgElemInfo_servtype37 {
   optional bytes surpriseid = 8;
   optional uint32 randomtype = 9;
 }
+
+message PbMultiMediaElement {
+  message Elem1 {
+    message Meta {
+      message Data {
+        optional int32 FileLen = 1;
+        optional bytes PicMd5 = 2;
+      }
+      optional Data data = 1;
+      optional string FilePath = 2;
+    }
+    optional Meta meta = 1;
+
+    message Data {
+      optional string ImgURL = 2;
+      optional string Domain = 3;
+    }
+    optional Data data = 2;
+  }
+  optional Elem1 elem1 = 1;
+
+  message Elem2 {
+    message Data {
+      message Friend {
+        optional string RKey = 30;
+      }
+      optional Friend friend = 11;
+      message Group {
+        optional string RKey = 30;
+      }
+      optional Group group = 12;
+    }
+    optional Data data = 1;
+  }
+  optional Elem2 elem2 = 2;
+}
+
+

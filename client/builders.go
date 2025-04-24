@@ -8,7 +8,6 @@ import (
 
 	"github.com/Mrs4s/MiraiGo/binary"
 	"github.com/Mrs4s/MiraiGo/binary/jce"
-	"github.com/Mrs4s/MiraiGo/client/internal/auth"
 	"github.com/Mrs4s/MiraiGo/client/internal/network"
 	"github.com/Mrs4s/MiraiGo/client/internal/oicq"
 	"github.com/Mrs4s/MiraiGo/client/pb"
@@ -17,9 +16,9 @@ import (
 	"github.com/Mrs4s/MiraiGo/client/pb/oidb"
 	"github.com/Mrs4s/MiraiGo/client/pb/profilecard"
 	"github.com/Mrs4s/MiraiGo/client/pb/structmsg"
-	"github.com/Mrs4s/MiraiGo/internal/packets"
 	"github.com/Mrs4s/MiraiGo/internal/proto"
 	"github.com/Mrs4s/MiraiGo/internal/tlv"
+	"github.com/Mrs4s/MiraiGo/wrapper"
 )
 
 var (
@@ -27,65 +26,92 @@ var (
 	syncConst2 = rand.Int63()
 )
 
+func buildCode2DRequestPacket(seq uint32, j uint64, cmd uint16, bodyFunc func(writer *binary.Writer)) []byte {
+	return binary.NewWriterF(func(w *binary.Writer) {
+		w.WriteByte(2)
+		pos := w.FillUInt16()
+		w.WriteUInt16(cmd)
+		w.Write(make([]byte, 21))
+		w.WriteByte(3)
+		w.WriteUInt16(0)
+		w.WriteUInt16(50) // version
+		w.WriteUInt32(seq)
+		w.WriteUInt64(j)
+		bodyFunc(w)
+		w.WriteByte(3)
+		w.WriteUInt16At(pos, uint16(w.Len()))
+	})
+}
+
 func (c *QQClient) buildLoginPacket() (uint16, []byte) {
 	seq := c.nextSeq()
 	t := &oicq.TLV{
 		Command: 9,
 		List: [][]byte{
 			tlv.T18(16, uint32(c.Uin)),
-			tlv.T1(uint32(c.Uin), c.deviceInfo.IpAddress),
-			tlv.T106(uint32(c.Uin), 0, c.version.AppId, c.version.SSOVersion, c.PasswordMd5, true, c.deviceInfo.Guid, c.deviceInfo.TgtgtKey, 0),
-			tlv.T116(c.version.MiscBitmap, c.version.SubSigmap),
-			tlv.T100(c.version.SSOVersion, c.version.SubAppId, c.version.MainSigMap),
+			tlv.T1(uint32(c.Uin), c.Device().IpAddress),
+			tlv.T106(uint32(c.Uin), 0, c.version().AppId, c.version().SSOVersion, c.PasswordMd5, true, c.Device().Guid, c.Device().TgtgtKey, 0),
+			tlv.T116(c.version().MiscBitmap, c.version().SubSigmap),
+			tlv.T100(c.version().SSOVersion, c.version().SubAppId, c.version().MainSigMap),
 			tlv.T107(0),
-			tlv.T142(c.version.ApkId),
+			tlv.T142(c.version().ApkId),
 			tlv.T144(
-				[]byte(c.deviceInfo.IMEI),
-				c.deviceInfo.GenDeviceInfoData(),
-				c.deviceInfo.OSType,
-				c.deviceInfo.Version.Release,
-				c.deviceInfo.SimInfo,
-				c.deviceInfo.APN,
+				[]byte(c.Device().IMEI),
+				c.Device().GenDeviceInfoData(),
+				c.Device().OSType,
+				c.Device().Version.Release,
+				c.Device().SimInfo,
+				c.Device().APN,
 				false, true, false, tlv.GuidFlag(),
-				c.deviceInfo.Model,
-				c.deviceInfo.Guid,
-				c.deviceInfo.Brand,
-				c.deviceInfo.TgtgtKey,
+				c.Device().Model,
+				c.Device().Guid,
+				c.Device().Brand,
+				c.Device().TgtgtKey,
 			),
-			tlv.T145(c.deviceInfo.Guid),
-			tlv.T147(16, []byte(c.version.SortVersionName), c.version.ApkSign),
+			tlv.T145(c.Device().Guid),
+			tlv.T147(16, []byte(c.version().SortVersionName), c.version().ApkSign),
 			/*
 				if (miscBitMap & 0x80) != 0{
 					w.Write(tlv.T166(1))
 				}
 			*/
 			tlv.T154(seq),
-			tlv.T141(c.deviceInfo.SimInfo, c.deviceInfo.APN),
+			tlv.T141(c.Device().SimInfo, c.Device().APN),
 			tlv.T8(2052),
 			tlv.T511([]string{
 				"tenpay.com", "openmobile.qq.com", "docs.qq.com", "connect.qq.com",
 				"qzone.qq.com", "vip.qq.com", "gamecenter.qq.com", "qun.qq.com", "game.qq.com",
 				"qqweb.qq.com", "office.qq.com", "ti.qq.com", "mail.qq.com", "mma.qq.com",
 			}),
-			tlv.T187(c.deviceInfo.MacAddress),
-			tlv.T188(c.deviceInfo.AndroidId),
+			tlv.T187(c.Device().MacAddress),
+			tlv.T188(c.Device().AndroidId),
 		},
 	}
-	if len(c.deviceInfo.IMSIMd5) != 0 {
-		t.Append(tlv.T194(c.deviceInfo.IMSIMd5))
+	if len(c.Device().IMSIMd5) != 0 {
+		t.Append(tlv.T194(c.Device().IMSIMd5))
 	}
 	if c.AllowSlider {
 		t.Append(tlv.T191(0x82))
 	}
-	if len(c.deviceInfo.WifiBSSID) != 0 && len(c.deviceInfo.WifiSSID) != 0 {
-		t.Append(tlv.T202(c.deviceInfo.WifiBSSID, c.deviceInfo.WifiSSID))
+	if len(c.Device().WifiBSSID) != 0 && len(c.Device().WifiSSID) != 0 {
+		t.Append(tlv.T202(c.Device().WifiBSSID, c.Device().WifiSSID))
 	}
 	t.Append(
-		tlv.T177(c.version.BuildTime, c.version.SdkVersion),
+		tlv.T177(c.version().BuildTime, c.version().SdkVersion),
 		tlv.T516(),
 		tlv.T521(0),
 		tlv.T525(tlv.T536([]byte{0x01, 0x00})),
 	)
+	if wrapper.DandelionEnergy != nil {
+		if t544 := tlv.T544v2(uint64(c.Uin), "810_9", 9, c.version().SdkVersion, c.Device().Guid, c.version().SortVersionName, wrapper.DandelionEnergy); t544 != nil {
+			t.Append(t544)
+		}
+	}
+	if c.Device().QImei16 != "" {
+		t.Append(tlv.T545([]byte(c.Device().QImei16)))
+	} else {
+		t.Append(tlv.T545([]byte(c.Device().IMEI)))
+	}
 	req := c.buildOicqRequestPacket(c.Uin, 0x0810, t)
 	r := network.Request{
 		Type:        network.RequestTypeLogin,
@@ -105,7 +131,7 @@ func (c *QQClient) buildDeviceLockLoginPacket() (uint16, []byte) {
 		List: [][]byte{
 			tlv.T8(2052),
 			tlv.T104(c.sig.T104),
-			tlv.T116(c.version.MiscBitmap, c.version.SubSigmap),
+			tlv.T116(c.version().MiscBitmap, c.version().SubSigmap),
 			tlv.T401(c.sig.G),
 		},
 	})
@@ -121,17 +147,15 @@ func (c *QQClient) buildDeviceLockLoginPacket() (uint16, []byte) {
 }
 
 func (c *QQClient) buildQRCodeFetchRequestPacket(size, margin, ecLevel uint32) (uint16, []byte) {
-	version := c.transport.Version
-	watch := auth.AndroidWatch.Version()
-	c.transport.Version = watch
+	// old := c.version()
+	// watch := auth.AndroidWatch.Version()
+	// c.transport.Version = watch
 	seq := c.nextSeq()
 	req := oicq.Message{
 		Command:          0x0812,
 		EncryptionMethod: oicq.EM_ECDH,
 		Body: binary.NewWriterF(func(w *binary.Writer) {
-			w.WriteHex(`0001110000001000000072000000`) // trans header
-			w.WriteUInt32(uint32(time.Now().Unix()))
-			w.Write(packets.BuildCode2DRequestPacket(0, 0, 0x31, func(w *binary.Writer) {
+			code2dPacket := buildCode2DRequestPacket(0, 0, 0x31, func(w *binary.Writer) {
 				w.WriteUInt16(0)  // const
 				w.WriteUInt32(16) // app id
 				w.WriteUInt64(0)  // const
@@ -139,13 +163,20 @@ func (c *QQClient) buildQRCodeFetchRequestPacket(size, margin, ecLevel uint32) (
 				w.WriteBytesShort(EmptyBytes)
 
 				w.WriteUInt16(6)
-				w.Write(tlv.T16(watch.SSOVersion, 16, watch.AppId, c.deviceInfo.Guid, []byte(watch.ApkId), []byte(watch.SortVersionName), watch.ApkSign))
+				w.Write(tlv.T16(c.transport.Version.SSOVersion, 16, c.transport.Version.AppId, c.Device().Guid, []byte(c.transport.Version.ApkId), []byte(c.transport.Version.SortVersionName), c.transport.Version.ApkSign))
 				w.Write(tlv.T1B(0, 0, size, margin, 72, ecLevel, 2))
-				w.Write(tlv.T1D(watch.MiscBitmap))
-				w.Write(tlv.T1F(false, c.deviceInfo.OSType, []byte("7.1.2"), []byte("China Mobile GSM"), c.deviceInfo.APN, 2))
-				w.Write(tlv.T33(c.deviceInfo.Guid))
+				w.Write(tlv.T1D(c.transport.Version.MiscBitmap))
+				w.Write(tlv.T1F(false, c.Device().OSType, []byte("7.1.2"), []byte("China Mobile GSM"), c.Device().APN, 2))
+				w.Write(tlv.T33(c.Device().Guid))
 				w.Write(tlv.T35(8))
-			}))
+			})
+			w.WriteByte(0x0)
+			w.WriteUInt16(uint16(len(code2dPacket)) + 4)
+			w.WriteUInt32(16)
+			w.WriteUInt32(0x72)
+			w.WriteHex("000000")
+			w.WriteUInt32(uint32(time.Now().Unix()))
+			w.Write(code2dPacket)
 		}),
 	}
 	r := network.Request{
@@ -157,21 +188,19 @@ func (c *QQClient) buildQRCodeFetchRequestPacket(size, margin, ecLevel uint32) (
 		Body:        c.oicq.Marshal(&req),
 	}
 	payload := c.transport.PackPacket(&r)
-	c.transport.Version = version
+	// c.transport.Version = old
 	return seq, payload
 }
 
 func (c *QQClient) buildQRCodeResultQueryRequestPacket(sig []byte) (uint16, []byte) {
-	version := c.transport.Version
-	c.transport.Version = auth.AndroidWatch.Version()
+	// old := c.version()
+	// c.transport.Version = auth.AndroidWatch.Version()
 	seq := c.nextSeq()
 	req := oicq.Message{
 		Command:          0x0812,
 		EncryptionMethod: oicq.EM_ECDH,
 		Body: binary.NewWriterF(func(w *binary.Writer) {
-			w.WriteHex(`0000620000001000000072000000`) // trans header
-			w.WriteUInt32(uint32(time.Now().Unix()))
-			w.Write(packets.BuildCode2DRequestPacket(1, 0, 0x12, func(w *binary.Writer) {
+			code2dPacket := buildCode2DRequestPacket(1, 0, 0x12, func(w *binary.Writer) {
 				w.WriteUInt16(5)  // const
 				w.WriteByte(1)    // const
 				w.WriteUInt32(8)  // product type
@@ -181,7 +210,14 @@ func (c *QQClient) buildQRCodeResultQueryRequestPacket(sig []byte) (uint16, []by
 				w.WriteByte(8)   // const
 				w.WriteBytesShort(EmptyBytes)
 				w.WriteUInt16(0) // const
-			}))
+			})
+			w.WriteByte(0x0)
+			w.WriteUInt16(uint16(len(code2dPacket)) + 4)
+			w.WriteUInt32(16)
+			w.WriteUInt32(0x72)
+			w.WriteHex("000000")
+			w.WriteUInt32(uint32(time.Now().Unix()))
+			w.Write(code2dPacket)
 		}),
 	}
 	r := network.Request{
@@ -193,7 +229,7 @@ func (c *QQClient) buildQRCodeResultQueryRequestPacket(sig []byte) (uint16, []by
 		Body:        c.oicq.Marshal(&req),
 	}
 	payload := c.transport.PackPacket(&r)
-	c.transport.Version = version
+	// c.transport.Version = old
 	return seq, payload
 }
 
@@ -203,43 +239,43 @@ func (c *QQClient) buildQRCodeLoginPacket(t106, t16a, t318 []byte) (uint16, []by
 		Command: 9,
 		List: [][]byte{
 			tlv.T18(16, uint32(c.Uin)),
-			tlv.T1(uint32(c.Uin), c.deviceInfo.IpAddress),
+			tlv.T1(uint32(c.Uin), c.Device().IpAddress),
 			tlv.T(0x106, t106),
-			// tlv.T106(uint32(c.Uin), 0, c.version.AppId, c.version.SSOVersion, c.PasswordMd5, true, c.deviceInfo.Guid, c.deviceInfo.TgtgtKey, 0),
-			tlv.T116(c.version.MiscBitmap, c.version.SubSigmap),
-			tlv.T100(c.version.SSOVersion, c.version.SubAppId, c.version.MainSigMap),
+			// tlv.T106(uint32(c.Uin), 0, c.version.AppId, c.version.SSOVersion, c.PasswordMd5, true, c.device.Guid, c.device.TgtgtKey, 0),
+			tlv.T116(c.version().MiscBitmap, c.version().SubSigmap),
+			tlv.T100(c.version().SSOVersion, c.version().SubAppId, c.version().MainSigMap),
 			tlv.T107(0),
-			tlv.T142(c.version.ApkId),
+			tlv.T142(c.version().ApkId),
 			tlv.T144(
-				[]byte(c.deviceInfo.IMEI),
-				c.deviceInfo.GenDeviceInfoData(),
-				c.deviceInfo.OSType,
-				c.deviceInfo.Version.Release,
-				c.deviceInfo.SimInfo,
-				c.deviceInfo.APN,
+				[]byte(c.Device().IMEI),
+				c.Device().GenDeviceInfoData(),
+				c.Device().OSType,
+				c.Device().Version.Release,
+				c.Device().SimInfo,
+				c.Device().APN,
 				false, true, false, tlv.GuidFlag(),
-				c.deviceInfo.Model,
-				c.deviceInfo.Guid,
-				c.deviceInfo.Brand,
-				c.deviceInfo.TgtgtKey,
+				c.Device().Model,
+				c.Device().Guid,
+				c.Device().Brand,
+				c.Device().TgtgtKey,
 			),
-			tlv.T145(c.deviceInfo.Guid),
-			tlv.T147(16, []byte(c.version.SortVersionName), c.version.ApkSign),
+			tlv.T145(c.Device().Guid),
+			tlv.T147(16, []byte(c.version().SortVersionName), c.version().ApkSign),
 			tlv.T(0x16a, t16a),
 			tlv.T154(seq),
-			tlv.T141(c.deviceInfo.SimInfo, c.deviceInfo.APN),
+			tlv.T141(c.Device().SimInfo, c.Device().APN),
 			tlv.T8(2052),
 			tlv.T511([]string{
 				"tenpay.com", "openmobile.qq.com", "docs.qq.com", "connect.qq.com",
 				"qzone.qq.com", "vip.qq.com", "gamecenter.qq.com", "qun.qq.com", "game.qq.com",
 				"qqweb.qq.com", "office.qq.com", "ti.qq.com", "mail.qq.com", "mma.qq.com",
 			}),
-			tlv.T187(c.deviceInfo.MacAddress),
-			tlv.T188(c.deviceInfo.AndroidId),
-			tlv.T194(c.deviceInfo.IMSIMd5),
+			tlv.T187(c.Device().MacAddress),
+			tlv.T188(c.Device().AndroidId),
+			tlv.T194(c.Device().IMSIMd5),
 			tlv.T191(0x00),
-			tlv.T202(c.deviceInfo.WifiBSSID, c.deviceInfo.WifiSSID),
-			tlv.T177(c.version.BuildTime, c.version.SdkVersion),
+			tlv.T202(c.Device().WifiBSSID, c.Device().WifiSSID),
+			tlv.T177(c.version().BuildTime, c.version().SdkVersion),
 			tlv.T516(),
 			tlv.T521(8),
 			// tlv.T525(tlv.T536([]byte{0x01, 0x00})),
@@ -266,11 +302,16 @@ func (c *QQClient) buildCaptchaPacket(result string, sign []byte) (uint16, []byt
 			tlv.T2(result, sign),
 			tlv.T8(2052),
 			tlv.T104(c.sig.T104),
-			tlv.T116(c.version.MiscBitmap, c.version.SubSigmap),
+			tlv.T116(c.version().MiscBitmap, c.version().SubSigmap),
 		},
 	}
 	if c.sig.T547 != nil {
 		t.Append(tlv.T(0x547, c.sig.T547))
+	}
+	if wrapper.DandelionEnergy != nil {
+		if t544 := tlv.T544(uint64(c.Uin), "810_2", 2, c.version().SdkVersion, c.Device().Guid, c.version().SortVersionName, wrapper.DandelionEnergy); t544 != nil {
+			t.Append(t544)
+		}
 	}
 	req := c.buildOicqRequestPacket(c.Uin, 0x0810, t)
 	r := network.Request{
@@ -291,7 +332,7 @@ func (c *QQClient) buildSMSRequestPacket() (uint16, []byte) {
 		List: [][]byte{
 			tlv.T8(2052),
 			tlv.T104(c.sig.T104),
-			tlv.T116(c.version.MiscBitmap, c.version.SubSigmap),
+			tlv.T116(c.version().MiscBitmap, c.version().SubSigmap),
 			tlv.T174(c.sig.T174),
 			tlv.T17A(9),
 			tlv.T197(),
@@ -310,18 +351,24 @@ func (c *QQClient) buildSMSRequestPacket() (uint16, []byte) {
 
 func (c *QQClient) buildSMSCodeSubmitPacket(code string) (uint16, []byte) {
 	seq := c.nextSeq()
-	req := c.buildOicqRequestPacket(c.Uin, 0x0810, &oicq.TLV{
+	t := &oicq.TLV{
 		Command: 7,
 		List: [][]byte{
 			tlv.T8(2052),
 			tlv.T104(c.sig.T104),
-			tlv.T116(c.version.MiscBitmap, c.version.SubSigmap),
+			tlv.T116(c.version().MiscBitmap, c.version().SubSigmap),
 			tlv.T174(c.sig.T174),
 			tlv.T17C(code),
 			tlv.T401(c.sig.G),
 			tlv.T198(),
 		},
-	})
+	}
+	if wrapper.DandelionEnergy != nil {
+		if t544 := tlv.T544(uint64(c.Uin), "810_7", 7, c.version().SdkVersion, c.Device().Guid, c.version().SortVersionName, wrapper.DandelionEnergy); t544 != nil {
+			t.Append(t544)
+		}
+	}
+	req := c.buildOicqRequestPacket(c.Uin, 0x0810, t)
 	r := network.Request{
 		Type:        network.RequestTypeLogin,
 		EncryptType: network.EncryptTypeEmptyKey,
@@ -341,11 +388,16 @@ func (c *QQClient) buildTicketSubmitPacket(ticket string) (uint16, []byte) {
 			tlv.T193(ticket),
 			tlv.T8(2052),
 			tlv.T104(c.sig.T104),
-			tlv.T116(c.version.MiscBitmap, c.version.SubSigmap),
+			tlv.T116(c.version().MiscBitmap, c.version().SubSigmap),
 		},
 	}
 	if c.sig.T547 != nil {
 		t.Append(tlv.T(0x547, c.sig.T547))
+	}
+	if wrapper.DandelionEnergy != nil {
+		if t544 := tlv.T544(uint64(c.Uin), "810_2", 2, c.version().SdkVersion, c.Device().Guid, c.version().SortVersionName, wrapper.DandelionEnergy); t544 != nil {
+			t.Append(t544)
+		}
 	}
 	req := c.buildOicqRequestPacket(c.Uin, 0x0810, t)
 	r := network.Request{
@@ -365,48 +417,59 @@ func (c *QQClient) buildRequestTgtgtNopicsigPacket() (uint16, []byte) {
 		Command: 15,
 		List: [][]byte{
 			tlv.T18(16, uint32(c.Uin)),
-			tlv.T1(uint32(c.Uin), c.deviceInfo.IpAddress),
+			tlv.T1(uint32(c.Uin), c.Device().IpAddress),
 			tlv.T(0x106, c.sig.EncryptedA1),
-			tlv.T116(c.version.MiscBitmap, c.version.SubSigmap),
-			tlv.T100(c.version.SSOVersion, 2, c.version.MainSigMap),
+			tlv.T116(c.version().MiscBitmap, c.version().SubSigmap),
+			tlv.T100(c.version().SSOVersion, 2, c.version().MainSigMap),
 			tlv.T107(0),
 			tlv.T108(c.sig.Ksid),
 			tlv.T144(
-				c.deviceInfo.AndroidId,
-				c.deviceInfo.GenDeviceInfoData(),
-				c.deviceInfo.OSType,
-				c.deviceInfo.Version.Release,
-				c.deviceInfo.SimInfo,
-				c.deviceInfo.APN,
+				c.Device().AndroidId,
+				c.Device().GenDeviceInfoData(),
+				c.Device().OSType,
+				c.Device().Version.Release,
+				c.Device().SimInfo,
+				c.Device().APN,
 				false, true, false, tlv.GuidFlag(),
-				c.deviceInfo.Model,
-				c.deviceInfo.Guid,
-				c.deviceInfo.Brand,
-				c.deviceInfo.TgtgtKey,
+				c.Device().Model,
+				c.Device().Guid,
+				c.Device().Brand,
+				c.Device().TgtgtKey,
 			),
-			tlv.T142(c.version.ApkId),
-			tlv.T145(c.deviceInfo.Guid),
+			tlv.T142(c.version().ApkId),
+			tlv.T145(c.Device().Guid),
 			tlv.T16A(c.sig.SrmToken),
 			tlv.T154(seq),
-			tlv.T141(c.deviceInfo.SimInfo, c.deviceInfo.APN),
+			tlv.T141(c.Device().SimInfo, c.Device().APN),
 			tlv.T8(2052),
 			tlv.T511([]string{
 				"tenpay.com", "openmobile.qq.com", "docs.qq.com", "connect.qq.com",
 				"qzone.qq.com", "vip.qq.com", "qun.qq.com", "game.qq.com", "qqweb.qq.com",
 				"office.qq.com", "ti.qq.com", "mail.qq.com", "qzone.com", "mma.qq.com",
 			}),
-			tlv.T147(16, []byte(c.version.SortVersionName), c.version.ApkSign),
-			tlv.T177(c.version.BuildTime, c.version.SdkVersion),
-			tlv.T400(c.sig.G, c.Uin, c.deviceInfo.Guid, c.sig.Dpwd, 1, 16, c.sig.RandSeed),
-			tlv.T187(c.deviceInfo.MacAddress),
-			tlv.T188(c.deviceInfo.AndroidId),
-			tlv.T194(c.deviceInfo.IMSIMd5),
-			tlv.T202(c.deviceInfo.WifiBSSID, c.deviceInfo.WifiSSID),
+			tlv.T147(16, []byte(c.version().SortVersionName), c.version().ApkSign),
+			tlv.T177(c.version().BuildTime, c.version().SdkVersion),
+			tlv.T400(c.sig.G, c.Uin, c.Device().Guid, c.sig.Dpwd, 1, 16, c.sig.RandSeed),
+			tlv.T187(c.Device().MacAddress),
+			tlv.T188(c.Device().AndroidId),
+			tlv.T194(c.Device().IMSIMd5),
+			tlv.T202(c.Device().WifiBSSID, c.Device().WifiSSID),
 			tlv.T516(),
 			tlv.T521(0),
 			tlv.T525(tlv.T536([]byte{0x01, 0x00})),
-			tlv.T545([]byte(c.deviceInfo.IMEI)),
 		},
+	}
+
+	if wrapper.DandelionEnergy != nil {
+		if t544 := tlv.T544v2(uint64(c.Uin), "810_f", 15, c.version().SdkVersion, c.Device().Guid, c.version().SortVersionName, wrapper.DandelionEnergy); t544 != nil {
+			t.Append(t544)
+		}
+	}
+
+	if c.Device().QImei16 != "" {
+		t.Append(tlv.T545([]byte(c.Device().QImei16)))
+	} else {
+		t.Append(tlv.T545([]byte(c.Device().IMEI)))
 	}
 	m := oicq.Message{
 		Uin:              uint32(c.Uin),
@@ -414,7 +477,7 @@ func (c *QQClient) buildRequestTgtgtNopicsigPacket() (uint16, []byte) {
 		EncryptionMethod: oicq.EM_ST,
 		Body:             t.Marshal(),
 	}
-	nreq := network.Request{
+	req := network.Request{
 		Type:        network.RequestTypeSimple,
 		EncryptType: network.EncryptTypeEmptyKey,
 		Uin:         c.Uin,
@@ -422,7 +485,7 @@ func (c *QQClient) buildRequestTgtgtNopicsigPacket() (uint16, []byte) {
 		CommandName: "wtlogin.exchange_emp",
 		Body:        c.oicq.Marshal(&m),
 	}
-	return seq, c.transport.PackPacket(&nreq)
+	return seq, c.transport.PackPacket(&req)
 }
 
 func (c *QQClient) buildRequestChangeSigPacket(changeD2 bool) (uint16, []byte) {
@@ -430,9 +493,9 @@ func (c *QQClient) buildRequestChangeSigPacket(changeD2 bool) (uint16, []byte) {
 	t := &oicq.TLV{
 		Command: 11,
 		List: [][]byte{
-			tlv.T100(c.version.SSOVersion, 100, c.version.MainSigMap),
+			tlv.T100(c.version().SSOVersion, 100, c.version().MainSigMap),
 			tlv.T10A(c.sig.TGT),
-			tlv.T116(c.version.MiscBitmap, c.version.SubSigmap),
+			tlv.T116(c.version().MiscBitmap, c.version().SubSigmap),
 			tlv.T108(c.sig.Ksid),
 		},
 	}
@@ -448,16 +511,16 @@ func (c *QQClient) buildRequestChangeSigPacket(changeD2 bool) (uint16, []byte) {
 	}
 	t.Append(
 		tlv.T144(
-			c.deviceInfo.AndroidId,
-			c.deviceInfo.GenDeviceInfoData(),
-			c.deviceInfo.OSType,
-			c.deviceInfo.Version.Release,
-			c.deviceInfo.SimInfo,
-			c.deviceInfo.APN,
+			c.Device().AndroidId,
+			c.Device().GenDeviceInfoData(),
+			c.Device().OSType,
+			c.Device().Version.Release,
+			c.Device().SimInfo,
+			c.Device().APN,
 			false, true, false, tlv.GuidFlag(),
-			c.deviceInfo.Model,
-			c.deviceInfo.Guid,
-			c.deviceInfo.Brand,
+			c.Device().Model,
+			c.Device().Guid,
+			c.Device().Brand,
 			key,
 		),
 		tlv.T112(c.Uin),
@@ -465,26 +528,31 @@ func (c *QQClient) buildRequestChangeSigPacket(changeD2 bool) (uint16, []byte) {
 	if changeD2 {
 		t.Append(tlv.T143(c.sig.D2))
 	} else {
-		t.Append(tlv.T145(c.deviceInfo.Guid))
+		t.Append(tlv.T145(c.Device().Guid))
 	}
 	t.Append(
-		tlv.T142(c.version.ApkId),
+		tlv.T142(c.version().ApkId),
 		tlv.T154(seq),
 		tlv.T18(16, uint32(c.Uin)),
-		tlv.T141(c.deviceInfo.SimInfo, c.deviceInfo.APN),
+		tlv.T141(c.Device().SimInfo, c.Device().APN),
 		tlv.T8(2052),
-		tlv.T147(16, []byte(c.version.SortVersionName), c.version.ApkSign),
-		tlv.T177(c.version.BuildTime, c.version.SdkVersion),
-		tlv.T187(c.deviceInfo.MacAddress),
-		tlv.T188(c.deviceInfo.AndroidId),
-		tlv.T194(c.deviceInfo.IMSIMd5),
+		tlv.T147(16, []byte(c.version().SortVersionName), c.version().ApkSign),
+		tlv.T177(c.version().BuildTime, c.version().SdkVersion),
+		tlv.T187(c.Device().MacAddress),
+		tlv.T188(c.Device().AndroidId),
+		tlv.T194(c.Device().IMSIMd5),
 		tlv.T511([]string{
 			"tenpay.com", "openmobile.qq.com", "docs.qq.com", "connect.qq.com",
 			"qzone.qq.com", "vip.qq.com", "qun.qq.com", "game.qq.com", "qqweb.qq.com",
 			"office.qq.com", "ti.qq.com", "mail.qq.com", "qzone.com", "mma.qq.com",
 		}),
-		tlv.T202(c.deviceInfo.WifiBSSID, c.deviceInfo.WifiSSID),
+		tlv.T202(c.Device().WifiBSSID, c.Device().WifiSSID),
 	)
+	if wrapper.DandelionEnergy != nil && t.Command == 10 {
+		if t544 := tlv.T544v2(uint64(c.Uin), "810_a", 10, c.version().SdkVersion, c.Device().Guid, c.version().SortVersionName, wrapper.DandelionEnergy); t544 != nil {
+			t.Append(t544)
+		}
+	}
 	req := c.buildOicqRequestPacket(c.Uin, 0x0810, t)
 	req2 := network.Request{
 		Type:        network.RequestTypeLogin,
@@ -507,23 +575,23 @@ func (c *QQClient) buildClientRegisterPacket() (uint16, []byte) {
 		Status:       11,
 		KickPC:       0,
 		KickWeak:     0,
-		IOSVersion:   int64(c.deviceInfo.Version.SDK),
+		IOSVersion:   int64(c.Device().Version.SDK),
 		NetType:      1,
 		RegType:      0,
-		Guid:         c.deviceInfo.Guid,
+		Guid:         c.Device().Guid,
 		IsSetStatus:  0,
 		LocaleId:     2052,
-		DevName:      string(c.deviceInfo.Model),
-		DevType:      string(c.deviceInfo.Model),
-		OSVer:        string(c.deviceInfo.Version.Release),
+		DevName:      string(c.Device().Model),
+		DevType:      string(c.Device().Model),
+		OSVer:        string(c.Device().Version.Release),
 		OpenPush:     1,
 		LargeSeq:     1551,
 		OldSSOIp:     0,
 		NewSSOIp:     31806887127679168,
 		ChannelNo:    "",
 		CPID:         0,
-		VendorName:   string(c.deviceInfo.VendorName),
-		VendorOSName: string(c.deviceInfo.VendorOSName),
+		VendorName:   string(c.Device().VendorName),
+		VendorOSName: string(c.Device().VendorOSName),
 		B769:         []byte{0x0A, 0x04, 0x08, 0x2E, 0x10, 0x00, 0x0A, 0x05, 0x08, 0x9B, 0x02, 0x10, 0x00},
 		SetMute:      0,
 	}
@@ -561,15 +629,15 @@ func (c *QQClient) buildStatusSetPacket(status, extStatus int32) (uint16, []byte
 		KickPC:          0,
 		KickWeak:        0,
 		Timestamp:       time.Now().Unix(),
-		IOSVersion:      int64(c.deviceInfo.Version.SDK),
+		IOSVersion:      int64(c.Device().Version.SDK),
 		NetType:         1,
 		RegType:         0,
-		Guid:            c.deviceInfo.Guid,
+		Guid:            c.Device().Guid,
 		IsSetStatus:     1,
 		LocaleId:        2052,
-		DevName:         string(c.deviceInfo.Model),
-		DevType:         string(c.deviceInfo.Model),
-		OSVer:           string(c.deviceInfo.Version.Release),
+		DevName:         string(c.Device().Model),
+		DevType:         string(c.Device().Model),
+		OSVer:           string(c.Device().Version.Release),
 		OpenPush:        1,
 		LargeSeq:        1551,
 		ExtOnlineStatus: int64(extStatus),
@@ -853,7 +921,7 @@ func (c *QQClient) buildGetMessageRequestPacket(flag msg.SyncFlag, msgTime int64
 		})
 	}
 	req := &msg.GetMessageRequest{
-		SyncFlag:           proto.Some(int32(flag)),
+		SyncFlag:           proto.Some(flag),
 		SyncCookie:         cook,
 		LatestRambleNumber: proto.Int32(20),
 		OtherRambleNumber:  proto.Int32(3),
@@ -1025,21 +1093,23 @@ func (c *QQClient) buildGroupMuteAllPacket(groupCode int64, mute bool) (uint16, 
 }
 
 // OidbSvc.0x8a0_0
-func (c *QQClient) buildGroupKickPacket(groupCode, memberUin int64, kickMsg string, block bool) (uint16, []byte) {
+func (c *QQClient) buildGroupKickPacket(groupCode int64, kickMsg string, block bool, memberUins ...int64) (uint16, []byte) {
 	flagBlock := 0
 	if block {
 		flagBlock = 1
 	}
+	msgKickList := make([]*oidb.D8A0KickMemberInfo, 0, len(memberUins))
+	for _, memberUin := range memberUins {
+		msgKickList = append(msgKickList, &oidb.D8A0KickMemberInfo{
+			OptUint32Operate:   5,
+			OptUint64MemberUin: memberUin,
+			OptUint32Flag:      int32(flagBlock),
+		})
+	}
 	body := &oidb.D8A0ReqBody{
 		OptUint64GroupCode: groupCode,
-		MsgKickList: []*oidb.D8A0KickMemberInfo{
-			{
-				OptUint32Operate:   5,
-				OptUint64MemberUin: memberUin,
-				OptUint32Flag:      int32(flagBlock),
-			},
-		},
-		KickMsg: []byte(kickMsg),
+		MsgKickList:        msgKickList,
+		KickMsg:            []byte(kickMsg),
 	}
 	b, _ := proto.Marshal(body)
 	payload := c.packOIDBPackage(2208, 0, b)
@@ -1195,4 +1265,19 @@ func (c *QQClient) buildUpdateProfileDetailPacket(profileRecord map[uint16][]byt
 	payload := c.packOIDBPackage(1279, 9, b)
 	cl()
 	return c.uniPacket("OidbSvc.0x4ff_9_IMCore", payload)
+}
+
+// OidbSvc.0x568_22
+func (c *QQClient) buildSetGroupAnonymous(groupCode int64, enable bool) (uint16, []byte) {
+	var t byte = 0
+	if enable {
+		t = 1
+	}
+	b, cl := binary.OpenWriterF(func(w *binary.Writer) {
+		w.WriteUInt32(uint32(groupCode))
+		w.WriteByte(t)
+	})
+	payload := c.packOIDBPackage(1384, 22, b)
+	cl()
+	return c.uniPacket("OidbSvc.0x568_22", payload)
 }
